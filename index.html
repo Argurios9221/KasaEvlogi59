@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="bg">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Каса - ЕВЛОГИ 59</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-content">
+          <button id="menuToggle" class="menu-toggle" aria-label="Отвори листове">☰</button>
+          <div>
+            <p class="eyebrow">Каса / ЕВЛОГИ 59</p>
+            <h1>Таблица на входа</h1>
+          </div>
+          <div class="header-badge">Локално тестване</div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <div id="sidebarBackdrop" class="sidebar-backdrop" hidden></div>
+        <aside class="sidebar">
+          <div class="panel-header">
+            <h2>Страници</h2>
+          </div>
+          <div id="sheetButtons" class="sheet-buttons" aria-live="polite"></div>
+        </aside>
+
+        <section class="content">
+          <!-- Статистическите карти премахнати по искане на потребителя -->
+
+          <div class="panel-header panel-header-inline">
+            <h2 id="currentSheetTitle">Изберете страница</h2>
+            <span id="sheetMeta" class="sheet-meta"></span>
+            <!-- Експорт/Печат бутоните премахнати -->
+          </div>
+
+          <div id="statusBanner" class="status-banner"></div>
+
+          <div class="filters-panel">
+            <div class="filter-group">
+              <label for="personSelect">Име</label>
+              <select id="personSelect">
+                <option value="all">Всички</option>
+              </select>
+            </div>
+
+            <button id="resetFilters" type="button" class="reset-button">Изчисти</button>
+          </div>
+
+          
+
+          <!-- Toolbar (търсене) премахнат по заявка -->
+
+          <div class="table-wrap">
+            <table id="dataTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
