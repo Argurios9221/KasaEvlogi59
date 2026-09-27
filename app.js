@@ -330,6 +330,7 @@ function renderTable(rows) {
   // empty rows. This is a heuristic: if a row has exactly one non-empty cell
   // and that cell's header looks like a month name, drop the row.
   const monthRe = /януар|февр|март|април|май|юни|юли|авг|септ|окт|ноем|дек/i;
+  const auxNumericCols = ['куче', 'такса на месец', 'такса на мес'];
   const filteredRows = preparedRows.filter((row) => {
     const keys = Object.keys(row || {});
     let nonEmpty = 0;
@@ -366,6 +367,12 @@ function renderTable(rows) {
     // a stray numeric/artifact row (e.g., an orphan '5' or partially parsed line).
     // Also drop rows that are predominantly numeric with no identifying cols.
     if (!person && !apartment) {
+      // If the non-empty keys are exclusively auxiliary numeric columns
+      // such as 'КУЧЕ' or 'ТАКСА НА МЕСЕЦ', drop the row as artifact.
+      const nonEmptyKeys = keys.filter((k) => String(row[k] ?? '').trim() !== '');
+      const nonEmptyLower = nonEmptyKeys.map((k) => String(k).trim().toLowerCase());
+      const auxOnly = nonEmptyLower.length > 0 && nonEmptyLower.every((k) => monthRe.test(k) || auxNumericCols.includes(k));
+      if (auxOnly) return false;
       // count numeric values among non-empty cells
       let numericCount = 0;
       for (const k of keys) {
