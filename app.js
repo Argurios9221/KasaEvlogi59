@@ -364,7 +364,23 @@ function renderTable(rows) {
 
     // Drop any non-summary row that has no person and no apartment — likely
     // a stray numeric/artifact row (e.g., an orphan '5' or partially parsed line).
-    if (!person && !apartment && !isSummaryRow(row)) return false;
+    // Also drop rows that are predominantly numeric with no identifying cols.
+    if (!person && !apartment) {
+      // count numeric values among non-empty cells
+      let numericCount = 0;
+      for (const k of keys) {
+        const v = String(row[k] ?? '').trim();
+        if (v === '') continue;
+        // treat values like '5', '15', '10.00' as numeric
+        if (/^-?\d+(?:[\.,]\d+)?$/.test(v)) numericCount++;
+      }
+
+      // If row is mostly numeric (>=50% of non-empty) or has no identifying fields
+      // and is not a genuine summary, drop it.
+      if (numericCount >= 1 && numericCount >= Math.ceil(nonEmpty / 2)) return false;
+      if (!isSummaryRow(row) && numericCount === nonEmpty && nonEmpty > 0) return false;
+      if (!isSummaryRow(row) && nonEmpty === 1 && numericCount === 1) return false;
+    }
     return true;
   });
   const rowsToRender = filteredRows;
