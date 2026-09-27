@@ -338,7 +338,29 @@ function renderTable(rows) {
       const v = String(row[k] ?? '').trim();
       if (v !== '') { nonEmpty++; lastKey = k; }
     }
+    // Drop rows that contain only a single non-empty cell under a month
+    // header (common CSV/merged-cell artifact).
     if (nonEmpty === 1 && lastKey && monthRe.test(lastKey)) return false;
+
+    // Also drop rows that contain only a single non-empty cell and that
+    // row does not contain a recognizable person or apartment value — this
+    // covers stray numeric cells (like an isolated '5').
+    if (nonEmpty === 1) {
+      const person = extractPersonValue(row);
+      const apartment = extractApartmentValue(row);
+      if (!person && !apartment) return false;
+    }
+
+    // Drop rows that contain only month-columns (no person/apartment and
+    // all non-empty cells are month columns). This filters rows with several
+    // month numbers but no identifying columns.
+    const monthCount = keys.reduce((acc, k) => {
+      const v = String(row[k] ?? '').trim();
+      return acc + ((v !== '' && monthRe.test(k)) ? 1 : 0);
+    }, 0);
+    const person = extractPersonValue(row);
+    const apartment = extractApartmentValue(row);
+    if (!person && !apartment && monthCount > 0 && monthCount === nonEmpty) return false;
     return true;
   });
   const rowsToRender = filteredRows;
@@ -498,6 +520,10 @@ async function loadWorkbook() {
   isLoading = true;
   try {
     const workbook = { SheetNames: [], Sheets: {} };
+    // Environment detection: on localhost use API-first (if key exists),
+    // on deployed sites (e.g. GitHub Pages) prefer CSV-first because a local
+    // `/key` file won't be available and API keys are typically restricted.
+    const isLocalhost = (typeof location !== 'undefined') && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
 
     // If no API key is configured, try to read a local `/key` file (served by
     // your local static server) to make local testing easier.
@@ -515,17 +541,38 @@ async function loadWorkbook() {
 
     for (const sheet of KNOWN_SHEETS) {
       let rows = [];
-      if (GOOGLE_API_KEY && String(GOOGLE_API_KEY).trim() !== '') {
+      const haveKey = GOOGLE_API_KEY && String(GOOGLE_API_KEY).trim() !== '';
+
+      // Production: prefer CSV (public/export) since `/key` is not available
+      // on GitHub Pages and API keys are often referrer-restricted.
+      if (!isLocalhost) {
         try {
-          rows = await loadSheetApi(sheet.title, sheet.gid);
-          console.debug('[loadWorkbook] sheet', sheet.title, 'rows:', Array.isArray(rows) ? rows.length : '??');
-        } catch (e) {
-          console.warn(`API failed for sheet ${sheet.title}, falling back to CSV (gid=${sheet.gid}):`, e.message || e);
-          // Fallback to CSV export by gid
           rows = await loadSheetCsv(sheet.gid);
+          console.debug('[loadWorkbook] CSV-first sheet', sheet.title, 'rows:', Array.isArray(rows) ? rows.length : '??');
+        } catch (csvErr) {
+          console.warn(`CSV fetch failed for sheet ${sheet.title} (gid=${sheet.gid}), trying API:`, csvErr.message || csvErr);
+          if (haveKey) {
+            try {
+              rows = await loadSheetApi(sheet.title, sheet.gid);
+            } catch (apiErr) {
+              console.warn(`API also failed for sheet ${sheet.title}:`, apiErr.message || apiErr);
+              rows = [];
+            }
+          }
         }
       } else {
-        rows = await loadSheetCsv(sheet.gid);
+        // Localhost: prefer API if key exists, otherwise CSV
+        if (haveKey) {
+          try {
+            rows = await loadSheetApi(sheet.title, sheet.gid);
+            console.debug('[loadWorkbook] API-first sheet', sheet.title, 'rows:', Array.isArray(rows) ? rows.length : '??');
+          } catch (e) {
+            console.warn(`API failed for sheet ${sheet.title}, falling back to CSV (gid=${sheet.gid}):`, e.message || e);
+            rows = await loadSheetCsv(sheet.gid);
+          }
+        } else {
+          rows = await loadSheetCsv(sheet.gid);
+        }
       }
       workbook.SheetNames.push(sheet.title);
       workbook.Sheets[sheet.title] = rows;
