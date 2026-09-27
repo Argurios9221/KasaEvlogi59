@@ -22,6 +22,11 @@ let activeSheet = null;
 let filteredRows = [];
 // Application version
 const VERSION = '1.0';
+// Preferred online source: public Google Sheets export URL. This updates when cashier edits the sheet.
+// Keep the spreadsheet published/shared with "Anyone with the link can view".
+const GOOGLE_SHEET_EXPORT_URL = 'https://docs.google.com/spreadsheets/d/1FANWjbIgTaB1sbLKsKCFIeBLnhgeOFDBwyjEYJv9V_s/export?format=xlsx&gid=599724955';
+const GOOGLE_SPREADSHEET_ID = '1FANWjbIgTaB1sbLKsKCFIeBLnhgeOFDBwyjEYJv9V_s';
+const GOOGLE_API_KEY = 'AIzaSyCKtPquZuFkEczG8HfF71siIHJ0qj88Zsg';
 const layoutEl = document.querySelector('.layout');
 const sidebarBackdrop = document.getElementById('sidebarBackdrop');
 const menuToggle = document.getElementById('menuToggle');
@@ -590,36 +595,123 @@ function selectSheet(sheetName) {
 
 // Keyboard shortcuts removed per user request.
 
+// No local workbook fallback: the app reads the live Google Sheet only.
 async function loadWorkbook() {
   try {
-    for (const candidate of workbookCandidates) {
-      const response = await fetch(candidate, { cache: 'no-store' });
-      if (response.ok) {
-        workbookUrl = candidate;
-        const arrayBuffer = await response.arrayBuffer();
-        workbookData = XLSX.read(arrayBuffer, { type: 'array' });
-
+    // Prefer the Google Sheets API when a key is configured.
+    if (GOOGLE_API_KEY && GOOGLE_SPREADSHEET_ID) {
+      try {
+        const workbook = await loadFromGoogleSheetsApi(GOOGLE_SPREADSHEET_ID, GOOGLE_API_KEY);
+        workbookData = workbook;
         if (!workbookData.SheetNames || workbookData.SheetNames.length === 0) {
           throw new Error('Таблицата няма листове.');
         }
-
         createSheetButtons(workbookData.SheetNames);
         selectSheet(workbookData.SheetNames[0]);
-        // Keyboard shortcuts removed by user request
-        // Export/print handlers removed
-        showStatus(`Зареден файл: ${candidate}`, 'info');
+        showStatus(`Зареден Google Sheets API файл: ${GOOGLE_SPREADSHEET_ID}`, 'info');
+        setInterval(() => refreshGoogleSheetApi(), 30000);
         return;
+      } catch (gerr) {
+        console.warn('Google Sheets API failed; trying public export URL.', gerr);
       }
     }
 
-    throw new Error('Файлът с Excel таблицата не е открит.');
+    // Fallback to the public export URL for the same live spreadsheet.
+    if (GOOGLE_SHEET_EXPORT_URL) {
+      try {
+        const response = await fetch(GOOGLE_SHEET_EXPORT_URL, { cache: 'no-store' });
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          workbookData = XLSX.read(arrayBuffer, { type: 'array' });
+          if (!workbookData.SheetNames || workbookData.SheetNames.length === 0) {
+            throw new Error('Таблицата няма листове.');
+          }
+          createSheetButtons(workbookData.SheetNames);
+          selectSheet(workbookData.SheetNames[0]);
+          showStatus(`Зареден онлайн файл: ${GOOGLE_SHEET_EXPORT_URL}`, 'info');
+          setInterval(() => refreshGoogleSheet(), 30000);
+          return;
+        }
+      } catch (gerr) {
+        console.warn('Online spreadsheet could not be loaded.', gerr);
+      }
+    }
+
+    throw new Error('Онлайн таблицата не е достъпна.');
   } catch (error) {
     console.error(error);
     currentSheetTitle.textContent = 'Няма данни';
-    sheetMeta.textContent = 'Excel файл не е наличен';
+    sheetMeta.textContent = 'Онлайн таблицата не е достъпна';
     tableHead.innerHTML = '<tr><th>Грешка</th></tr>';
-    tableBody.innerHTML = '<tr><td class="empty-state">Няма открит Excel файл в папка <strong>data</strong>.<br>Поставете файла <strong>Каса-Евлоги и Христо Георгиеви 59.xlsx</strong> или <strong>kasa.xlsx</strong> там и натиснете Refresh.</td></tr>';
+    tableBody.innerHTML = '<tr><td class="empty-state">Не може да се зареди онлайн таблицата. Проверете връзката и правата за достъп.</td></tr>';
     showStatus(error.message, 'error');
+  }
+}
+
+async function loadFromGoogleSheetsApi(spreadsheetId, apiKey) {
+  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties&key=${apiKey}`;
+  const metaResponse = await fetch(metaUrl, { cache: 'no-store' });
+  if (!metaResponse.ok) {
+    const errorText = await metaResponse.text();
+    throw new Error(`Google Sheets metadata failed: ${metaResponse.status} ${errorText}`);
+  }
+
+  const metaJson = await metaResponse.json();
+  const sheetTitles = (metaJson.sheets || []).map((sheet) => sheet.properties?.title).filter(Boolean);
+  if (!sheetTitles.length) throw new Error('No Google Sheets tabs found');
+
+  const workbook = { SheetNames: [], Sheets: {} };
+
+  for (const title of sheetTitles) {
+    const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(title)}?key=${apiKey}`;
+    const valuesResponse = await fetch(valuesUrl, { cache: 'no-store' });
+    if (!valuesResponse.ok) {
+      console.warn(`Skipping sheet ${title} because it could not be read.`);
+      continue;
+    }
+
+    const valuesJson = await valuesResponse.json();
+    const rows = valuesJson.values || [];
+    if (!rows.length) {
+      workbook.SheetNames.push(title);
+      workbook.Sheets[title] = [];
+      continue;
+    }
+
+    const headers = rows[0].map((heading) => String(heading || '').trim());
+    const sheetRows = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] || [];
+      const record = {};
+      headers.forEach((header, index) => {
+        record[header || `Column${index + 1}`] = row[index] ?? '';
+      });
+      sheetRows.push(record);
+    }
+
+    workbook.SheetNames.push(title);
+    workbook.Sheets[title] = sheetRows;
+  }
+
+  return workbook;
+}
+
+async function refreshGoogleSheetApi() {
+  try {
+    const refreshed = await loadFromGoogleSheetsApi(GOOGLE_SPREADSHEET_ID, GOOGLE_API_KEY);
+    if (!refreshed.SheetNames || refreshed.SheetNames.length === 0) return;
+
+    workbookData = refreshed;
+    if (!activeSheet || !workbookData.SheetNames.includes(activeSheet)) {
+      activeSheet = workbookData.SheetNames[0];
+    }
+
+    createSheetButtons(workbookData.SheetNames);
+    selectSheet(activeSheet);
+    showStatus('Данните бяха обновени от Google Sheets API.', 'success');
+  } catch (error) {
+    console.warn('Google Sheets API refresh failed:', error);
   }
 }
 
