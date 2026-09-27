@@ -620,6 +620,11 @@ tbody tr:focus-within, tbody tr:hover {
   * { transition: none !important; animation: none !important; }
 }
 
+/* Ensure the menu toggle is hidden on larger screens */
+@media (min-width: 901px) {
+  .menu-toggle { display: none !important; }
+}
+
 .sr-only {
   position: absolute !important;
   width: 1px !important;
