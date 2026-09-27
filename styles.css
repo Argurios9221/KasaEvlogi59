@@ -349,6 +349,9 @@ tbody tr:hover {
   border-radius: 14px;
   padding: 16px;
   margin-bottom: 18px;
+    /* make sure filters sit above overlays on mobile */
+    position: relative;
+    z-index: 60;
 }
 
 .filter-group {
@@ -381,6 +384,8 @@ tbody tr:hover {
   font-size: 1.04rem;
   background: #fff;
   color: var(--text);
+    width: 100%;
+    touch-action: manipulation;
 }
 
 .reset-button {
@@ -547,6 +552,13 @@ tr:last-child td {
     overflow-x: auto;
     overflow-y: visible;
     -webkit-overflow-scrolling: touch;
+    z-index: 5;
+  }
+
+  /* Ensure select and reset button appear above sidebar/backdrop when open */
+  .layout.sidebar-open .filters-panel,
+  .layout.sidebar-open .filters-panel * {
+    z-index: 60;
   }
 
   table {
