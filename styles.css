@@ -157,6 +157,48 @@ h1 {
   gap: 10px;
 }
 
+/* Folder / group styles */
+.folder {
+  background: linear-gradient(180deg, #fbfdff 0%, #f7fbff 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+}
+.folder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.folder-title {
+  font-weight: 800;
+  color: var(--primary-strong);
+}
+.folder-count {
+  background: var(--panel-alt);
+  color: var(--primary-strong);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.folder-content {
+  display: grid;
+  gap: 8px;
+  padding: 8px 6px 2px 6px;
+}
+.folder-toggle {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-weight: 700;
+}
+.folder.collapsed .folder-content { display: none; }
+.folder.collapsed .folder-toggle { transform: rotate(0deg); }
+.folder .folder-toggle { transform: rotate(90deg); transition: transform 160ms ease; }
+
 .sheet-button {
   appearance: none;
   border: 1px solid var(--border);

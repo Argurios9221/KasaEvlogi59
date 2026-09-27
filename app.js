@@ -86,16 +86,93 @@ function prettySheetName(sheetName) {
 function createSheetButtons(sheetNames) {
   sheetButtons.innerHTML = '';
 
+  // Group sheets: put 2025 sheets in their own folder, others remain in main list
+  const groups = { '2025': [], 'other': [] };
   sheetNames.forEach((sheetName) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'sheet-button';
-    button.dataset.sheetName = sheetName;
-    button.textContent = prettySheetName(sheetName);
-    button.setAttribute('aria-label', `Покажи данни от лист ${sheetName}`);
-    button.addEventListener('click', () => selectSheet(sheetName));
-    sheetButtons.appendChild(button);
+    const pretty = prettySheetName(sheetName);
+    if (/2025/.test(pretty) || /2025/.test(sheetName)) groups['2025'].push({ sheetName, pretty }); else groups['other'].push({ sheetName, pretty });
   });
+
+  // Render main group (other)
+  if (groups.other.length > 0) {
+    const mainFolder = document.createElement('div');
+    mainFolder.className = 'folder';
+    const header = document.createElement('div');
+    header.className = 'folder-header';
+    const title = document.createElement('div');
+    title.className = 'folder-title';
+    title.textContent = 'Страници';
+    const count = document.createElement('div');
+    count.className = 'folder-count';
+    count.textContent = String(groups.other.length);
+    header.appendChild(title);
+    header.appendChild(count);
+    const content = document.createElement('div');
+    content.className = 'folder-content';
+
+    groups.other.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sheet-button';
+      button.dataset.sheetName = item.sheetName;
+      button.textContent = item.pretty;
+      button.setAttribute('aria-label', `Покажи данни от лист ${item.sheetName}`);
+      button.addEventListener('click', () => selectSheet(item.sheetName));
+      content.appendChild(button);
+    });
+
+    mainFolder.appendChild(header);
+    mainFolder.appendChild(content);
+    sheetButtons.appendChild(mainFolder);
+  }
+
+  // Render 2025 group as a separate folder with same buttons
+  if (groups['2025'].length > 0) {
+    const folder = document.createElement('div');
+    folder.className = 'folder collapsed';
+    const header = document.createElement('div');
+    header.className = 'folder-header';
+    const title = document.createElement('div');
+    title.className = 'folder-title';
+    title.textContent = 'Архив 2025';
+    const count = document.createElement('div');
+    count.className = 'folder-count';
+    count.textContent = String(groups['2025'].length);
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'folder-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = '▸';
+
+    header.appendChild(title);
+    header.appendChild(count);
+    header.appendChild(toggle);
+
+    const content = document.createElement('div');
+    content.className = 'folder-content';
+
+    groups['2025'].forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sheet-button';
+      button.dataset.sheetName = item.sheetName;
+      button.textContent = item.pretty;
+      button.setAttribute('aria-label', `Покажи данни от лист ${item.sheetName}`);
+      button.addEventListener('click', () => selectSheet(item.sheetName));
+      content.appendChild(button);
+    });
+
+    // Toggle behavior
+    header.addEventListener('click', () => {
+      const collapsed = folder.classList.toggle('collapsed');
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    });
+
+    folder.appendChild(header);
+    folder.appendChild(content);
+    sheetButtons.appendChild(folder);
+  }
 }
 
 function setActiveButton(sheetName) {
