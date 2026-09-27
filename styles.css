@@ -298,6 +298,11 @@ h1 {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel);
+  /* Ensure table wrapper receives touch events and sits above any overlay */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  z-index: 5;
+  position: relative;
 }
 
 table {
