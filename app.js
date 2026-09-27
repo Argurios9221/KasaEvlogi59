@@ -359,14 +359,26 @@ function renderTable(rows) {
       const v = String(row[k] ?? '').trim();
       return acc + ((v !== '' && monthRe.test(k)) ? 1 : 0);
     }, 0);
-    const person = extractPersonValue(row);
-    const apartment = extractApartmentValue(row);
-    if (!person && !apartment && monthCount > 0 && monthCount === nonEmpty) return false;
+      // Determine if the row has explicit person/apartment columns filled.
+      const PERSON_HEADERS = ['Име','Имена','Собственик','Наемател','Име и фамилия','Name','Owner','Tenant','Име/Фамилия','Име наемател','Име на собственика'];
+      const APARTMENT_HEADERS = ['Апартамент','Апартамент №','№ апартамент','№','Apartment','Apartment No','Къща','Стая','Ап.','Апартамент_№','ApartmentNumber'];
 
-    // Drop any non-summary row that has no person and no apartment — likely
-    // a stray numeric/artifact row (e.g., an orphan '5' or partially parsed line).
-    // Also drop rows that are predominantly numeric with no identifying cols.
-    if (!person && !apartment) {
+      const hasExplicitPerson = PERSON_HEADERS.some((h) => {
+        for (const key of keys) if (String(key).trim().toLowerCase() === String(h).trim().toLowerCase() && String(row[key] ?? '').trim() !== '') return true;
+        return false;
+      });
+
+      const hasExplicitApartment = APARTMENT_HEADERS.some((h) => {
+        for (const key of keys) if (String(key).trim().toLowerCase() === String(h).trim().toLowerCase() && String(row[key] ?? '').trim() !== '') return true;
+        return false;
+      });
+
+      // If the row only has month columns or only auxiliary numeric columns, drop it.
+      if (!hasExplicitPerson && !hasExplicitApartment && monthCount > 0 && monthCount === nonEmpty) return false;
+
+      // If the row has no explicit person/apartment cells filled, treat it as orphan.
+      // We still allow summary rows.
+      if (!hasExplicitPerson && !hasExplicitApartment) {
       // If the non-empty keys are exclusively auxiliary numeric columns
       // such as 'КУЧЕ' or 'ТАКСА НА МЕСЕЦ', drop the row as artifact.
       const nonEmptyKeys = keys.filter((k) => String(row[k] ?? '').trim() !== '');
