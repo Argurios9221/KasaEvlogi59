@@ -4,6 +4,7 @@
   --panel-alt: #eaf4ff;
   --primary: #1957a8;
   --primary-strong: #0d3f85;
+  --primary-strong: #072b57;
   --accent: #34a853;
   --accent-soft: #dff4e7;
   --text: #1d2736;
@@ -14,6 +15,28 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Accessibility helpers */
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.skip-link:focus {
+  left: 12px;
+  top: 12px;
+  width: auto;
+  height: auto;
+  padding: 8px 12px;
+  background: #fff;
+  color: var(--primary-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(25,87,168,0.12);
+  z-index: 9999;
 }
 
 html, body {
@@ -171,7 +194,16 @@ h1 {
   gap: 12px;
   padding: 6px 8px;
   cursor: pointer;
+  border-radius: 8px;
 }
+
+.folder-header:focus-visible {
+  outline: 3px solid rgba(7,43,87,0.18);
+  outline-offset: 2px;
+}
+
+.folder[aria-expanded="true"] .folder-toggle { transform: rotate(90deg); }
+.folder[aria-expanded="false"] .folder-toggle { transform: rotate(0deg); }
 .folder-title {
   font-weight: 800;
   color: var(--primary-strong);
@@ -468,4 +500,20 @@ tbody tr:focus-within, tbody tr:hover {
 .sheet-button:focus {
   outline: 3px solid rgba(25,87,168,0.14);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }

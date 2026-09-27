@@ -97,14 +97,21 @@ function createSheetButtons(sheetNames) {
   if (groups.other.length > 0) {
     const mainFolder = document.createElement('div');
     mainFolder.className = 'folder';
+    mainFolder.setAttribute('role', 'group');
+    mainFolder.setAttribute('aria-label', 'Страници');
+
     const header = document.createElement('div');
     header.className = 'folder-header';
+    header.setAttribute('role', 'heading');
+
     const title = document.createElement('div');
     title.className = 'folder-title';
     title.textContent = 'Страници';
+
     const count = document.createElement('div');
     count.className = 'folder-count';
     count.textContent = String(groups.other.length);
+
     header.appendChild(title);
     header.appendChild(count);
     const content = document.createElement('div');
@@ -130,19 +137,26 @@ function createSheetButtons(sheetNames) {
   if (groups['2025'].length > 0) {
     const folder = document.createElement('div');
     folder.className = 'folder collapsed';
+    folder.setAttribute('role', 'region');
+    folder.setAttribute('aria-label', 'Архив 2025');
+    folder.setAttribute('aria-expanded', 'false');
+
     const header = document.createElement('div');
     header.className = 'folder-header';
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+
     const title = document.createElement('div');
     title.className = 'folder-title';
     title.textContent = 'Архив 2025';
+
     const count = document.createElement('div');
     count.className = 'folder-count';
     count.textContent = String(groups['2025'].length);
 
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
+    const toggle = document.createElement('div');
     toggle.className = 'folder-toggle';
-    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-hidden', 'true');
     toggle.textContent = '▸';
 
     header.appendChild(title);
@@ -150,7 +164,10 @@ function createSheetButtons(sheetNames) {
     header.appendChild(toggle);
 
     const content = document.createElement('div');
+    const contentId = `folder-2025-content`;
     content.className = 'folder-content';
+    content.id = contentId;
+    header.setAttribute('aria-controls', contentId);
 
     groups['2025'].forEach((item) => {
       const button = document.createElement('button');
@@ -163,10 +180,20 @@ function createSheetButtons(sheetNames) {
       content.appendChild(button);
     });
 
-    // Toggle behavior
-    header.addEventListener('click', () => {
+    // Toggle behavior (click and keyboard)
+    function toggleFolder() {
       const collapsed = folder.classList.toggle('collapsed');
-      toggle.setAttribute('aria-expanded', String(!collapsed));
+      folder.setAttribute('aria-expanded', String(!collapsed));
+      const expanded = folder.getAttribute('aria-expanded') === 'true';
+      header.setAttribute('aria-expanded', String(expanded));
+    }
+
+    header.addEventListener('click', toggleFolder);
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleFolder();
+      }
     });
 
     folder.appendChild(header);
@@ -414,6 +441,7 @@ function renderTable(rows) {
     headers.forEach((header) => {
       const th = document.createElement('th');
       th.textContent = header;
+      th.setAttribute('scope', 'col');
       headRow.appendChild(th);
     });
 
@@ -493,6 +521,7 @@ function renderTable(rows) {
     headers.forEach((header) => {
       const th = document.createElement('th');
       th.textContent = header;
+      th.setAttribute('scope', 'col');
       headRow.appendChild(th);
     });
     tableHead.appendChild(headRow);
