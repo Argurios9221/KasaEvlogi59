@@ -300,7 +300,8 @@ h1 {
   background: var(--panel);
   /* Ensure table wrapper receives touch events and sits above any overlay */
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+  touch-action: auto;
   z-index: 5;
   position: relative;
 }

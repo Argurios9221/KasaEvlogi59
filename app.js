@@ -35,11 +35,17 @@ const menuToggle = document.getElementById('menuToggle');
 function closeSidebar() {
   if (layoutEl) layoutEl.classList.remove('sidebar-open');
   if (sidebarBackdrop) sidebarBackdrop.hidden = true;
+  if (menuToggle) menuToggle.setAttribute('aria-expanded', 'false');
+  const sidebarEl = document.getElementById('sidebar');
+  if (sidebarEl) sidebarEl.setAttribute('aria-hidden', 'true');
 }
 
 function openSidebar() {
   if (layoutEl) layoutEl.classList.add('sidebar-open');
   if (sidebarBackdrop) sidebarBackdrop.hidden = false;
+  if (menuToggle) menuToggle.setAttribute('aria-expanded', 'true');
+  const sidebarEl = document.getElementById('sidebar');
+  if (sidebarEl) sidebarEl.setAttribute('aria-hidden', 'false');
 }
 
 if (menuToggle) {
@@ -300,15 +306,26 @@ function updateSummary(rows) {
 
 function populateFilters(rows) {
   const dataRows = splitRows(rows).regular;
-  const people = new Set();
-
+  // Build a map of person -> first-seen apartment to allow sorting by apartment number
+  const personMap = new Map();
   dataRows.forEach((row) => {
     const person = extractPersonValue(row);
-    if (person && person !== 'Непознато' && isValidPersonName(person)) people.add(person);
+    const apartment = extractApartmentValue(row);
+    if (person && person !== 'Непознато' && isValidPersonName(person)) {
+      if (!personMap.has(person)) personMap.set(person, apartment || '');
+    }
+  });
+
+  // Sort persons by apartment numeric value, then by name
+  const sorted = [...personMap.entries()].sort((a, b) => {
+    const aptA = apartmentSortValue(a[1]);
+    const aptB = apartmentSortValue(b[1]);
+    if (aptA !== aptB) return aptA - aptB;
+    return compareStrings(a[0], b[0]);
   });
 
   personSelect.innerHTML = '<option value="all">Всички</option>';
-  [...people].sort((a, b) => compareStrings(a, b)).forEach((person) => {
+  sorted.forEach(([person]) => {
     const option = document.createElement('option');
     option.value = person;
     option.textContent = person;
