@@ -1,9 +1,3 @@
-const workbookCandidates = [
-  'data/%D0%9A%D0%B0%D1%81%D0%B0-%D0%95%D0%B2%D0%BB%D0%BE%D0%B3%D0%B8%20%D0%B8%20%D0%A5%D1%80%D0%B8%D1%81%D1%82%D0%BE%20%D0%93%D0%B5%D0%BE%D1%80%D0%B3%D0%B8%D0%B5%D0%B2%D0%B8%2059.xlsx',
-  'data/kasa.xlsx'
-];
-
-let workbookUrl = workbookCandidates[0];
 const sheetButtons = document.getElementById('sheetButtons');
 const currentSheetTitle = document.getElementById('currentSheetTitle');
 const sheetMeta = document.getElementById('sheetMeta');
@@ -13,20 +7,27 @@ const tableHead = table.querySelector('thead');
 const tableBody = table.querySelector('tbody');
 const personSelect = document.getElementById('personSelect');
 const resetFiltersButton = document.getElementById('resetFilters');
-const summarySheets = document.getElementById('summarySheets');
-const summaryPeople = document.getElementById('summaryPeople');
-const summaryApartments = document.getElementById('summaryApartments');
 
 let workbookData = null;
 let activeSheet = null;
-let filteredRows = [];
-// Application version
-const VERSION = '1.0';
-// Preferred online source: public Google Sheets export URL. This updates when cashier edits the sheet.
-// Keep the spreadsheet published/shared with "Anyone with the link can view".
-const GOOGLE_SHEET_EXPORT_URL = 'https://docs.google.com/spreadsheets/d/1FANWjbIgTaB1sbLKsKCFIeBLnhgeOFDBwyjEYJv9V_s/export?format=xlsx&gid=599724955';
-const GOOGLE_SPREADSHEET_ID = '1FANWjbIgTaB1sbLKsKCFIeBLnhgeOFDBwyjEYJv9V_s';
-const GOOGLE_API_KEY = 'AIzaSyCKtPquZuFkEczG8HfF71siIHJ0qj88Zsg';
+// If you want to use the Google Sheets API, set an API key here.
+// Example: const GOOGLE_API_KEY = 'AIza...';
+// You can either set it directly here, or create a file named `key` in the
+// project root containing only the key (useful for local testing; do NOT commit
+// your real API key to a public repo).
+let GOOGLE_API_KEY = 'AIzaSyCKtPquZuFkEczG8HfF71siIHJ0qj88Zsg';
+const SPREADSHEET_ID = '1FANWjbIgTaB1sbLKsKCFIeBLnhgeOFDBwyjEYJv9V_s';
+
+const KNOWN_SHEETS = [
+  { title: 'За текущи разходи 2026', gid: '1188057095' },
+  { title: 'Фонд Ремонт 2026', gid: '1017103576' },
+  { title: 'Разходи 2026', gid: '1437820316' },
+  { title: 'Разпределение на междуетажни помещения', gid: '1987582172' },
+  { title: 'Текущи разходи 2025', gid: '0' },
+  { title: 'Фонд Ремонт 2025', gid: '2119164190' },
+  { title: 'Разходи 2025', gid: '599724955' }
+];
+
 const layoutEl = document.querySelector('.layout');
 const sidebarBackdrop = document.getElementById('sidebarBackdrop');
 const menuToggle = document.getElementById('menuToggle');
@@ -41,110 +42,54 @@ function openSidebar() {
   if (sidebarBackdrop) sidebarBackdrop.hidden = false;
 }
 
-if (menuToggle) menuToggle.addEventListener('click', (e) => {
-  if (layoutEl && layoutEl.classList.contains('sidebar-open')) closeSidebar(); else openSidebar();
-});
-if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', closeSidebar);
+if (menuToggle) {
+  menuToggle.addEventListener('click', () => {
+    if (layoutEl && layoutEl.classList.contains('sidebar-open')) closeSidebar();
+    else openSidebar();
+  });
+}
+
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener('click', closeSidebar);
+}
 
 function showStatus(message, type = 'info') {
   statusBanner.textContent = message;
   statusBanner.className = `status-banner ${type}`;
 }
 
+function normalizeText(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function prettySheetName(sheetName) {
-  const raw = String(sheetName ?? '').trim();
+  const raw = String(sheetName || '').trim();
   if (!raw) return 'Непознат лист';
 
-  let value = raw
-    .replace(/20216/gi, '2026')
-    .replace(/20215/gi, '2025')
-    .replace(/2021\s*[-/ ]\s*6/gi, '2026')
-    .replace(/2021\s*[-/ ]\s*5/gi, '2025')
-    .replace(/2021\s*6\b/gi, '2026')
-    .replace(/2021\s*5\b/gi, '2025')
+  return raw
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-  value = value.replace(/\b(разходи|приходи|вход)\b/gi, (match) => {
-    const normalized = {
-      разходи: 'Разходи',
-      Разходи: 'Разходи',
-      приходи: 'Приходи',
-      Приходи: 'Приходи',
-      вход: 'Вход',
-      Вход: 'Вход'
-    };
-    return normalized[match] || match;
-  });
-
-  const yearMatch = value.match(/20\d{2}/);
-  if (yearMatch) {
-    const year = yearMatch[0];
-    value = value.replace(new RegExp(`(Разходи|Приходи|Вход)\\s*(?:-|\\s+)?${year}`, 'i'), `$1 ${year}`);
-  }
-
-  value = value.replace(/\s{2,}/g, ' ').trim();
-  return value || 'Непознат лист';
 }
 
 function createSheetButtons(sheetNames) {
   sheetButtons.innerHTML = '';
 
-  // Group sheets: put 2025 sheets in their own folder, others remain in main list
-  const groups = { '2025': [], 'other': [] };
+  const groups = { other: [], archive: [] };
   sheetNames.forEach((sheetName) => {
     const pretty = prettySheetName(sheetName);
-    if (/2025/.test(pretty) || /2025/.test(sheetName)) groups['2025'].push({ sheetName, pretty }); else groups['other'].push({ sheetName, pretty });
+    const item = { sheetName, pretty };
+    if (/2025/.test(sheetName) || /2025/.test(pretty)) groups.archive.push(item);
+    else groups.other.push(item);
   });
 
-  // Render main group (other)
-  if (groups.other.length > 0) {
-    const mainFolder = document.createElement('div');
-    mainFolder.className = 'folder';
-    mainFolder.setAttribute('role', 'group');
-    mainFolder.setAttribute('aria-label', 'Страници');
+  const renderGroup = (label, items, collapsed = false) => {
+    if (!items.length) return;
 
-    const header = document.createElement('div');
-    header.className = 'folder-header';
-    header.setAttribute('role', 'heading');
-
-    const title = document.createElement('div');
-    title.className = 'folder-title';
-    title.textContent = 'Страници';
-
-    const count = document.createElement('div');
-    count.className = 'folder-count';
-    count.textContent = String(groups.other.length);
-
-    header.appendChild(title);
-    header.appendChild(count);
-    const content = document.createElement('div');
-    content.className = 'folder-content';
-
-    groups.other.forEach((item) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'sheet-button';
-      button.dataset.sheetName = item.sheetName;
-      button.textContent = item.pretty;
-      button.setAttribute('aria-label', `Покажи данни от лист ${item.sheetName}`);
-      button.addEventListener('click', () => selectSheet(item.sheetName));
-      content.appendChild(button);
-    });
-
-    mainFolder.appendChild(header);
-    mainFolder.appendChild(content);
-    sheetButtons.appendChild(mainFolder);
-  }
-
-  // Render 2025 group as a separate folder with same buttons
-  if (groups['2025'].length > 0) {
     const folder = document.createElement('div');
-    folder.className = 'folder collapsed';
+    folder.className = 'folder' + (collapsed ? ' collapsed' : '');
     folder.setAttribute('role', 'region');
-    folder.setAttribute('aria-label', 'Архив 2025');
-    folder.setAttribute('aria-expanded', 'false');
+    folder.setAttribute('aria-expanded', String(!collapsed));
 
     const header = document.createElement('div');
     header.className = 'folder-header';
@@ -153,28 +98,25 @@ function createSheetButtons(sheetNames) {
 
     const title = document.createElement('div');
     title.className = 'folder-title';
-    title.textContent = 'Архив 2025';
+    title.textContent = label;
 
     const count = document.createElement('div');
     count.className = 'folder-count';
-    count.textContent = String(groups['2025'].length);
+    count.textContent = String(items.length);
 
     const toggle = document.createElement('div');
     toggle.className = 'folder-toggle';
-    toggle.setAttribute('aria-hidden', 'true');
     toggle.textContent = '▸';
+    toggle.setAttribute('aria-hidden', 'true');
 
     header.appendChild(title);
     header.appendChild(count);
     header.appendChild(toggle);
 
     const content = document.createElement('div');
-    const contentId = `folder-2025-content`;
     content.className = 'folder-content';
-    content.id = contentId;
-    header.setAttribute('aria-controls', contentId);
 
-    groups['2025'].forEach((item) => {
+    items.forEach((item) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'sheet-button';
@@ -185,26 +127,28 @@ function createSheetButtons(sheetNames) {
       content.appendChild(button);
     });
 
-    // Toggle behavior (click and keyboard)
-    function toggleFolder() {
-      const collapsed = folder.classList.toggle('collapsed');
-      folder.setAttribute('aria-expanded', String(!collapsed));
-      const expanded = folder.getAttribute('aria-expanded') === 'true';
-      header.setAttribute('aria-expanded', String(expanded));
-    }
+    const toggleFolder = () => {
+      const isCollapsed = folder.classList.toggle('collapsed');
+      folder.setAttribute('aria-expanded', String(!isCollapsed));
+    };
 
-    header.addEventListener('click', toggleFolder);
-    header.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggleFolder();
-      }
-    });
+    if (label === 'Архив 2025') {
+      header.addEventListener('click', toggleFolder);
+      header.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleFolder();
+        }
+      });
+    }
 
     folder.appendChild(header);
     folder.appendChild(content);
     sheetButtons.appendChild(folder);
-  }
+  };
+
+  renderGroup('Страници', groups.other, false);
+  renderGroup('Архив 2025', groups.archive, true);
 }
 
 function setActiveButton(sheetName) {
@@ -216,29 +160,8 @@ function setActiveButton(sheetName) {
   });
 }
 
-function normalizeText(value) {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
-function isMonthHeader(header) {
-  if (!header) return false;
-  const s = normalizeText(String(header));
-  const months = [
-    'януари','февруари','март','април','май','юни','юли','август','септември','октомври','ноември','декември',
-    'jan','feb','mar','apr','may','jun','jul','aug','sep','sept','oct','nov','dec',
-    'ян','фев','мар','апр','юни','юли','авг','сеп','окт','ное','дек'
-  ];
-  return months.some((m) => s === m || s.startsWith(m + ' ') || s === m + '.');
-}
-
 function hasMeaningfulData(rows) {
-  return !!(rows && rows.some((row) => Object.values(row).some((value) => {
-    const text = String(value ?? '').trim();
-    return text !== '';
-  })));
+  return !!(rows && rows.some((row) => Object.values(row).some((value) => String(value ?? '').trim() !== '')));
 }
 
 function getFirstMeaningfulCell(row) {
@@ -247,31 +170,6 @@ function getFirstMeaningfulCell(row) {
     if (text !== '') return text;
   }
   return '';
-}
-
-function extractApartmentValue(row) {
-  const candidates = [
-    row['Апартамент'],
-    row['Апартамент №'],
-    row['№ апартамент'],
-    row['№'],
-    row['Apartment'],
-    row['Apartment No'],
-    row['Къща'],
-    row['Стая'],
-    row['Ап.'],
-    row['Апартамент_№'],
-    row['ApartmentNumber']
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== '') {
-      return String(candidate).trim();
-    }
-  }
-
-  const fallback = getFirstMeaningfulCell(row);
-  return fallback || '';
 }
 
 function extractPersonValue(row) {
@@ -290,14 +188,33 @@ function extractPersonValue(row) {
     row['Име на собственика']
   ];
 
-  for (const candidate of candidates) {
-    if (candidate !== undefined && candidate !== null && String(candidate).trim() !== '') {
-      return String(candidate).trim();
-    }
+  for (const value of candidates) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
   }
 
-  const fallback = getFirstMeaningfulCell(row);
-  return fallback || '';
+  return getFirstMeaningfulCell(row) || '';
+}
+
+function extractApartmentValue(row) {
+  const candidates = [
+    row['Апартамент'],
+    row['Апартамент №'],
+    row['№ апартамент'],
+    row['№'],
+    row['Apartment'],
+    row['Apartment No'],
+    row['Къща'],
+    row['Стая'],
+    row['Ап.'],
+    row['Апартамент_№'],
+    row['ApartmentNumber']
+  ];
+
+  for (const value of candidates) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+
+  return getFirstMeaningfulCell(row) || '';
 }
 
 function compareStrings(a, b) {
@@ -307,12 +224,9 @@ function compareStrings(a, b) {
 function isValidPersonName(name) {
   if (!name) return false;
   const s = normalizeText(String(name));
-  if (!/[a-zа-яёіїґє]+/i.test(s)) return false; // must contain letters
-  // exclude numeric-only or pure apartment-like values
+  if (!/[a-zа-яёіїґє]+/i.test(s)) return false;
   if (/^\d+[\s\-\/]*\d*$/.test(s)) return false;
-  // exclude phrases like 'идеални части', 'идеални', 'части', common abbreviations
   if (/\b(идеал|идеални|части|ип|ид\.част|ид\.части|ид\. части)\b/i.test(name)) return false;
-  // too short to be a real person name
   if (s.length < 3) return false;
   return true;
 }
@@ -321,15 +235,13 @@ function isSummaryRow(row) {
   if (!row || typeof row !== 'object') return false;
 
   const summaryWords = [
-    'общо', 'събрани', 'събрана', 'събрано', 'сумa', 'сума',
-    'такса', 'гласувана', 'голямо', 'дълж', 'налични', 'вноски',
-    'приходи', 'разходи', 'плащане', 'платено', 'общо към', 'общо за'
+    'общо', 'събрани', 'събрана', 'събрано', 'сума', 'сумa', 'такса',
+    'приходи', 'разходи', 'гласувана', 'платено', 'налични', 'вноски'
   ];
 
   const values = Object.values(row).map((value) => String(value ?? '').trim().toLowerCase());
   const hasSummaryText = values.some((value) => summaryWords.some((word) => value.includes(word)));
   const isEmpty = !extractPersonValue(row) && !extractApartmentValue(row);
-
   return hasSummaryText || isEmpty;
 }
 
@@ -338,11 +250,8 @@ function splitRows(rows) {
   const summary = [];
 
   (rows || []).forEach((row) => {
-    if (isSummaryRow(row)) {
-      summary.push(row);
-    } else {
-      regular.push(row);
-    }
+    if (isSummaryRow(row)) summary.push(row);
+    else regular.push(row);
   });
 
   return { regular, summary };
@@ -354,8 +263,7 @@ function apartmentSortValue(value) {
 
   const cleaned = text.replace(/[^0-9]/g, '');
   const match = cleaned.match(/\d+/);
-  const numeric = match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
-  return numeric;
+  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
 }
 
 function sortRows(rows) {
@@ -385,17 +293,9 @@ function updateSummary(rows) {
     if (apartment) uniqueApartments.add(apartment);
   });
 
-  if (typeof summarySheets !== 'undefined' && summarySheets) {
-    summarySheets.textContent = workbookData ? String(workbookData.SheetNames.length) : '0';
-  }
-
-  if (typeof summaryPeople !== 'undefined' && summaryPeople) {
-    summaryPeople.textContent = String(uniquePeople.size);
-  }
-
-  if (typeof summaryApartments !== 'undefined' && summaryApartments) {
-    summaryApartments.textContent = String(uniqueApartments.size);
-  }
+  if (document.getElementById('summarySheets')) document.getElementById('summarySheets').textContent = workbookData ? String(workbookData.SheetNames.length) : '0';
+  if (document.getElementById('summaryPeople')) document.getElementById('summaryPeople').textContent = String(uniquePeople.size);
+  if (document.getElementById('summaryApartments')) document.getElementById('summaryApartments').textContent = String(uniqueApartments.size);
 }
 
 function populateFilters(rows) {
@@ -408,7 +308,6 @@ function populateFilters(rows) {
   });
 
   personSelect.innerHTML = '<option value="all">Всички</option>';
-
   [...people].sort((a, b) => compareStrings(a, b)).forEach((person) => {
     const option = document.createElement('option');
     option.value = person;
@@ -419,142 +318,72 @@ function populateFilters(rows) {
   updateSummary(dataRows);
 }
 
+function renderEmptySheetState() {
+  tableHead.innerHTML = '<tr><th></th></tr>';
+  tableBody.innerHTML = '<tr><td class="empty-state">&nbsp;</td></tr>';
+}
+
 function renderTable(rows) {
   const preparedRows = sortRows(rows || []);
+  // Remove rows that only contain a single month value (often from merged
+  // cells or stray CSV lines) to avoid showing orphan numeric cells as separate
+  // empty rows. This is a heuristic: if a row has exactly one non-empty cell
+  // and that cell's header looks like a month name, drop the row.
+  const monthRe = /януар|февр|март|април|май|юни|юли|авг|септ|окт|ноем|дек/i;
+  const filteredRows = preparedRows.filter((row) => {
+    const keys = Object.keys(row || {});
+    let nonEmpty = 0;
+    let lastKey = null;
+    for (const k of keys) {
+      const v = String(row[k] ?? '').trim();
+      if (v !== '') { nonEmpty++; lastKey = k; }
+    }
+    if (nonEmpty === 1 && lastKey && monthRe.test(lastKey)) return false;
+    return true;
+  });
+  const rowsToRender = filteredRows;
   tableHead.innerHTML = '';
   tableBody.innerHTML = '';
 
-  if (!hasMeaningfulData(preparedRows)) {
-    tableHead.innerHTML = '<tr><th>Празно</th></tr>';
-    tableBody.innerHTML = '<tr><td class="empty-state">Този лист е празен.</td></tr>';
+  if (!Array.isArray(rowsToRender) || rowsToRender.length === 0 || !hasMeaningfulData(rowsToRender)) {
+    renderEmptySheetState();
     return;
   }
-  const headers = Object.keys(preparedRows[0]);
+  const headers = Object.keys(rowsToRender[0]);
+  const headRow = document.createElement('tr');
+  headers.forEach((header) => {
+    const th = document.createElement('th');
+    th.textContent = header;
+    th.setAttribute('scope', 'col');
+    headRow.appendChild(th);
+  });
+  tableHead.appendChild(headRow);
 
-  // decide whether to render with mobile-expand feature (disabled)
-  // Play/expand button is turned off to keep table simple for all sheets
-  const isDetailMode = false;
-
-  if (isDetailMode) {
-    // create action column + headers
-    const headRow = document.createElement('tr');
-    const thAction = document.createElement('th');
-    thAction.className = 'col-action';
-    thAction.setAttribute('aria-hidden', 'true');
-    headRow.appendChild(thAction);
+  preparedRows.forEach((row) => {
+    const tr = document.createElement('tr');
+    if (isSummaryRow(row)) tr.classList.add('summary-row');
 
     headers.forEach((header) => {
-      const th = document.createElement('th');
-      th.textContent = header;
-      th.setAttribute('scope', 'col');
-      headRow.appendChild(th);
+      const td = document.createElement('td');
+      const value = row[header];
+      td.textContent = value !== undefined && value !== null ? String(value) : '';
+      tr.appendChild(td);
     });
 
-    tableHead.appendChild(headRow);
-
-    preparedRows.forEach((row) => {
-      const tr = document.createElement('tr');
-      if (isSummaryRow(row)) tr.classList.add('summary-row');
-
-      // action cell with expand button (visible on mobile via CSS)
-      const actionTd = document.createElement('td');
-      actionTd.className = 'col-action-cell';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'expand-row-button';
-      btn.setAttribute('aria-expanded', 'false');
-      btn.innerHTML = '&#9656;';
-      actionTd.appendChild(btn);
-      tr.appendChild(actionTd);
-
-      // build normal cells
-      headers.forEach((header) => {
-        const td = document.createElement('td');
-        const value = row[header];
-        td.textContent = value !== undefined && value !== null ? String(value) : '';
-        tr.appendChild(td);
-      });
-
-      tableBody.appendChild(tr);
-
-      // mobile detail row (hidden by default), will contain hidden columns
-      const detailTr = document.createElement('tr');
-      detailTr.className = 'mobile-detail-row';
-      const detailTd = document.createElement('td');
-      detailTd.colSpan = headers.length + 1;
-
-      const detailWrapper = document.createElement('div');
-      detailWrapper.className = 'mobile-detail-wrapper';
-      // add key/value pairs for columns that are likely hidden on mobile (index >=5)
-      headers.forEach((header, idx) => {
-        if (idx >= 5) {
-          const val = row[header];
-          if (val !== undefined && val !== null && String(val).trim() !== '') {
-            const item = document.createElement('div');
-            item.className = 'detail-item';
-            const k = document.createElement('strong');
-            k.textContent = header + ': ';
-            const v = document.createElement('span');
-            v.textContent = String(val);
-            item.appendChild(k);
-            item.appendChild(v);
-            detailWrapper.appendChild(item);
-          }
-        }
-      });
-
-      detailTd.appendChild(detailWrapper);
-      detailTr.appendChild(detailTd);
-      tableBody.appendChild(detailTr);
-
-      // toggle detail on button click
-      btn.addEventListener('click', () => {
-        const expanded = btn.getAttribute('aria-expanded') === 'true';
-        btn.setAttribute('aria-expanded', String(!expanded));
-        if (!expanded) {
-          btn.classList.add('expanded');
-          detailTr.classList.add('open');
-        } else {
-          btn.classList.remove('expanded');
-          detailTr.classList.remove('open');
-        }
-      });
-    });
-  } else {
-    // build header row (no action column)
-    const headRow = document.createElement('tr');
-    headers.forEach((header) => {
-      const th = document.createElement('th');
-      th.textContent = header;
-      th.setAttribute('scope', 'col');
-      headRow.appendChild(th);
-    });
-    tableHead.appendChild(headRow);
-
-    // build body rows (simple)
-    preparedRows.forEach((row) => {
-      const tr = document.createElement('tr');
-      if (isSummaryRow(row)) tr.classList.add('summary-row');
-
-      headers.forEach((header) => {
-        const td = document.createElement('td');
-        const value = row[header];
-        td.textContent = value !== undefined && value !== null ? String(value) : '';
-        tr.appendChild(td);
-      });
-
-      tableBody.appendChild(tr);
-    });
-  }
+    tableBody.appendChild(tr);
+  });
 }
 
 function applyFilters() {
   const selectedPerson = personSelect.value;
-
-  const rows = workbookData ? XLSX.utils.sheet_to_json(workbookData.Sheets[activeSheet], { defval: '', raw: false }) : [];
+  let rows = [];
+  if (workbookData) {
+    const sheet = workbookData.Sheets[activeSheet];
+    if (Array.isArray(sheet)) rows = sheet;
+    else rows = XLSX.utils.sheet_to_json(sheet || {}, { defval: '', raw: false });
+  }
   const filteredRows = rows.filter((row) => {
     const personName = extractPersonValue(row);
-    // If a specific person is selected, do NOT include summary rows
     if (isSummaryRow(row)) return selectedPerson === 'all';
     if (!personName || personName === 'Непознато' || personName === 'Unknown') return false;
     return selectedPerson === 'all' || normalizeText(personName) === normalizeText(selectedPerson);
@@ -579,140 +408,159 @@ resetFiltersButton.addEventListener('click', () => {
 function selectSheet(sheetName) {
   activeSheet = sheetName;
   currentSheetTitle.textContent = prettySheetName(sheetName);
-  sheetMeta.textContent = `${workbookData.SheetNames.length} листа`;
+  let rows = [];
+  if (workbookData) {
+    const sheet = workbookData.Sheets[sheetName];
+    if (Array.isArray(sheet)) rows = sheet;
+    else rows = XLSX.utils.sheet_to_json(sheet || {}, { defval: '', raw: false });
+  }
+  const hasRows = Array.isArray(rows) && rows.length > 0 && hasMeaningfulData(rows);
+  sheetMeta.textContent = hasRows ? `${workbookData.SheetNames.length} листа` : '';
   setActiveButton(sheetName);
 
-  const worksheet = workbookData.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
-
   populateFilters(rows);
-  // Use the centralized filter logic so summary rows are shown only when no person is selected
   applyFilters();
-  // On mobile, close sidebar after selecting a sheet
-  try { closeSidebar(); } catch (e) { /* ignore */ }
-  showStatus(`Показват се данните от лист ${prettySheetName(sheetName)}.`, 'info');
+  closeSidebar();
+  showStatus(
+    hasRows ? `Показват се данните от лист ${prettySheetName(sheetName)}.` : 'Статус: няма данни за този лист.',
+    'info'
+  );
 }
 
-// Keyboard shortcuts removed per user request.
+async function loadSheetCsv(gid) {
+  const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  console.debug('[loadSheetCsv] fetching CSV url:', url);
+  const response = await fetch(url, { cache: 'no-store' });
+  console.debug('[loadSheetCsv] response status:', response.status);
+  if (!response.ok) throw new Error(`Неуспешен достъп до лист ${gid} (status ${response.status})`);
 
-// No local workbook fallback: the app reads the live Google Sheet only.
+  const csvText = await response.text();
+  console.debug('[loadSheetCsv] csv length:', csvText.length, 'preview:', csvText.slice(0, 300).replace(/\n/g, '\\n'));
+  const workbook = XLSX.read(csvText, { type: 'string', raw: false });
+  const firstSheetName = workbook.SheetNames[0];
+  return XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: '', raw: false });
+}
+
+async function loadSheetApi(sheetTitle, fallbackGid) {
+  // Try using the `values:batchGet` endpoint with `ranges` query param.
+  // First attempt with the plain sheet title; if Google returns 400, retry
+  // with the sheet name quoted and a broad A1 range.
+  const rawTitle = String(sheetTitle || '');
+
+  const buildBatchUrl = (range) => `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?ranges=${encodeURIComponent(range)}&key=${GOOGLE_API_KEY}`;
+
+  const tryPlain = async () => fetch(buildBatchUrl(rawTitle), { cache: 'no-store' });
+
+  let response = await tryPlain();
+  if (!response.ok && response.status === 400) {
+    // Retry with quoted sheet name and explicit A1 range
+    const quoted = `'${rawTitle.replace(/'/g, "''")}'`;
+    const ranged = `${quoted}!A1:ZZ9999`;
+    try {
+      response = await fetch(buildBatchUrl(ranged), { cache: 'no-store' });
+    } catch (e) {
+      // continue to error handling
+    }
+  }
+
+  if (!response.ok) {
+    let body = '';
+    try { body = await response.text(); } catch (e) { /* ignore */ }
+    // If a fallback gid was provided, throw an Error that includes the gid so
+    // the caller can decide to fallback to CSV reading.
+    const err = new Error(`Google Sheets API error for sheet ${sheetTitle}: ${response.status} ${body}`);
+    err.fallbackGid = fallbackGid;
+    throw err;
+  }
+
+  const json = await response.json();
+  const ranges = Array.isArray(json.valueRanges) ? json.valueRanges : [];
+  const values = ranges[0] && Array.isArray(ranges[0].values) ? ranges[0].values : [];
+  console.debug('[loadSheetApi] fetched values length for', sheetTitle, values.length);
+  if (values.length === 0) return [];
+
+  const headers = values[0].map((h) => String(h || '').trim());
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    const rowArr = values[i] || [];
+    const row = {};
+    for (let j = 0; j < headers.length; j++) {
+      row[headers[j]] = rowArr[j] !== undefined ? rowArr[j] : '';
+    }
+    rows.push(row);
+  }
+
+  return rows;
+}
+
 async function loadWorkbook() {
+  if (isLoading) return;
+  isLoading = true;
   try {
-    // Prefer the Google Sheets API when a key is configured.
-    if (GOOGLE_API_KEY && GOOGLE_SPREADSHEET_ID) {
+    const workbook = { SheetNames: [], Sheets: {} };
+
+    // If no API key is configured, try to read a local `/key` file (served by
+    // your local static server) to make local testing easier.
+    if ((!GOOGLE_API_KEY || String(GOOGLE_API_KEY).trim() === '')) {
       try {
-        const workbook = await loadFromGoogleSheetsApi(GOOGLE_SPREADSHEET_ID, GOOGLE_API_KEY);
-        workbookData = workbook;
-        if (!workbookData.SheetNames || workbookData.SheetNames.length === 0) {
-          throw new Error('Таблицата няма листове.');
+        const kresp = await fetch('/key', { cache: 'no-store' });
+        if (kresp.ok) {
+          const text = String(await kresp.text()).trim();
+          if (text) GOOGLE_API_KEY = text;
         }
-        createSheetButtons(workbookData.SheetNames);
-        selectSheet(workbookData.SheetNames[0]);
-        showStatus(`Зареден Google Sheets API файл: ${GOOGLE_SPREADSHEET_ID}`, 'info');
-        setInterval(() => refreshGoogleSheetApi(), 30000);
-        return;
-      } catch (gerr) {
-        console.warn('Google Sheets API failed; trying public export URL.', gerr);
+      } catch (e) {
+        // ignore local key fetch errors
       }
     }
 
-    // Fallback to the public export URL for the same live spreadsheet.
-    if (GOOGLE_SHEET_EXPORT_URL) {
-      try {
-        const response = await fetch(GOOGLE_SHEET_EXPORT_URL, { cache: 'no-store' });
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          workbookData = XLSX.read(arrayBuffer, { type: 'array' });
-          if (!workbookData.SheetNames || workbookData.SheetNames.length === 0) {
-            throw new Error('Таблицата няма листове.');
-          }
-          createSheetButtons(workbookData.SheetNames);
-          selectSheet(workbookData.SheetNames[0]);
-          showStatus(`Зареден онлайн файл: ${GOOGLE_SHEET_EXPORT_URL}`, 'info');
-          setInterval(() => refreshGoogleSheet(), 30000);
-          return;
+    for (const sheet of KNOWN_SHEETS) {
+      let rows = [];
+      if (GOOGLE_API_KEY && String(GOOGLE_API_KEY).trim() !== '') {
+        try {
+          rows = await loadSheetApi(sheet.title, sheet.gid);
+          console.debug('[loadWorkbook] sheet', sheet.title, 'rows:', Array.isArray(rows) ? rows.length : '??');
+        } catch (e) {
+          console.warn(`API failed for sheet ${sheet.title}, falling back to CSV (gid=${sheet.gid}):`, e.message || e);
+          // Fallback to CSV export by gid
+          rows = await loadSheetCsv(sheet.gid);
         }
-      } catch (gerr) {
-        console.warn('Online spreadsheet could not be loaded.', gerr);
+      } else {
+        rows = await loadSheetCsv(sheet.gid);
       }
+      workbook.SheetNames.push(sheet.title);
+      workbook.Sheets[sheet.title] = rows;
     }
 
-    throw new Error('Онлайн таблицата не е достъпна.');
+    workbookData = workbook;
+    createSheetButtons(workbookData.SheetNames);
+    if (workbookData.SheetNames.length > 0) {
+      // Preserve currently selected sheet if present; otherwise select first
+      const toSelect = activeSheet && workbookData.SheetNames.includes(activeSheet)
+        ? activeSheet
+        : workbookData.SheetNames[0];
+      selectSheet(toSelect);
+    }
+    showStatus(`Зареден Google Sheet: ${SPREADSHEET_ID}`, 'info');
   } catch (error) {
     console.error(error);
     currentSheetTitle.textContent = 'Няма данни';
     sheetMeta.textContent = 'Онлайн таблицата не е достъпна';
     tableHead.innerHTML = '<tr><th>Грешка</th></tr>';
-    tableBody.innerHTML = '<tr><td class="empty-state">Не може да се зареди онлайн таблицата. Проверете връзката и правата за достъп.</td></tr>';
+    tableBody.innerHTML = '<tr><td class="empty-state">Онлайн таблицата не е достъпна. Проверете споделянето на Google Sheet: „Anyone with the link“ → Viewer.</td></tr>';
     showStatus(error.message, 'error');
   }
 }
 
-async function loadFromGoogleSheetsApi(spreadsheetId, apiKey) {
-  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties&key=${apiKey}`;
-  const metaResponse = await fetch(metaUrl, { cache: 'no-store' });
-  if (!metaResponse.ok) {
-    const errorText = await metaResponse.text();
-    throw new Error(`Google Sheets metadata failed: ${metaResponse.status} ${errorText}`);
-  }
+// Loading control to avoid overlapping refreshes
+let isLoading = false;
 
-  const metaJson = await metaResponse.json();
-  const sheetTitles = (metaJson.sheets || []).map((sheet) => sheet.properties?.title).filter(Boolean);
-  if (!sheetTitles.length) throw new Error('No Google Sheets tabs found');
-
-  const workbook = { SheetNames: [], Sheets: {} };
-
-  for (const title of sheetTitles) {
-    const valuesUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(title)}?key=${apiKey}`;
-    const valuesResponse = await fetch(valuesUrl, { cache: 'no-store' });
-    if (!valuesResponse.ok) {
-      console.warn(`Skipping sheet ${title} because it could not be read.`);
-      continue;
-    }
-
-    const valuesJson = await valuesResponse.json();
-    const rows = valuesJson.values || [];
-    if (!rows.length) {
-      workbook.SheetNames.push(title);
-      workbook.Sheets[title] = [];
-      continue;
-    }
-
-    const headers = rows[0].map((heading) => String(heading || '').trim());
-    const sheetRows = [];
-
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i] || [];
-      const record = {};
-      headers.forEach((header, index) => {
-        record[header || `Column${index + 1}`] = row[index] ?? '';
-      });
-      sheetRows.push(record);
-    }
-
-    workbook.SheetNames.push(title);
-    workbook.Sheets[title] = sheetRows;
-  }
-
-  return workbook;
-}
-
-async function refreshGoogleSheetApi() {
-  try {
-    const refreshed = await loadFromGoogleSheetsApi(GOOGLE_SPREADSHEET_ID, GOOGLE_API_KEY);
-    if (!refreshed.SheetNames || refreshed.SheetNames.length === 0) return;
-
-    workbookData = refreshed;
-    if (!activeSheet || !workbookData.SheetNames.includes(activeSheet)) {
-      activeSheet = workbookData.SheetNames[0];
-    }
-
-    createSheetButtons(workbookData.SheetNames);
-    selectSheet(activeSheet);
-    showStatus('Данните бяха обновени от Google Sheets API.', 'success');
-  } catch (error) {
-    console.warn('Google Sheets API refresh failed:', error);
-  }
-}
-
+// Initial load
 loadWorkbook();
+
+// Auto-refresh every 30 seconds. Set to 0 to disable.
+const AUTO_REFRESH_MS = 30000;
+if (AUTO_REFRESH_MS > 0) {
+  setInterval(() => {
+    loadWorkbook();
+  }, AUTO_REFRESH_MS);
+}
