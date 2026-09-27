@@ -361,6 +361,10 @@ function renderTable(rows) {
     const person = extractPersonValue(row);
     const apartment = extractApartmentValue(row);
     if (!person && !apartment && monthCount > 0 && monthCount === nonEmpty) return false;
+
+    // Drop any non-summary row that has no person and no apartment — likely
+    // a stray numeric/artifact row (e.g., an orphan '5' or partially parsed line).
+    if (!person && !apartment && !isSummaryRow(row)) return false;
     return true;
   });
   const rowsToRender = filteredRows;
